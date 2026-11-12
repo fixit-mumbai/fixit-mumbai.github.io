@@ -127,6 +127,17 @@ footer p{margin:0 0 8px}
 .report a,footer a{color:var(--accent);font-weight:600}
 .btn.has-flag{position:relative;margin-top:12px}
 .flag{position:absolute;top:-12px;right:10px;background:var(--mark);color:var(--mark-ink);font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:3px;transform:rotate(-1.5deg);box-shadow:0 1px 0 rgba(0,0,0,.25);white-space:nowrap}
+.icons{display:flex;flex-wrap:wrap;gap:8px}
+.ico{flex:1 1 56px;max-width:96px;position:relative;font:inherit;font-size:12px;font-weight:600;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-bottom-width:3px;border-radius:6px;padding:10px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.ico svg{width:26px;height:26px;color:var(--accent)}
+.ico.lead svg{color:var(--send)}
+.ico[aria-selected="true"]{border-color:var(--accent);background:var(--soft);box-shadow:inset 0 -3px 0 var(--mark)}
+.ico .dot{position:absolute;top:5px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--mark)}
+.panel{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px;position:relative}
+.panel > strong{font-family:var(--display);font-size:18px;line-height:1.2}
+.panel .flag{position:static;align-self:flex-start;transform:rotate(-1deg)}
+.panel .hint{margin-top:-4px}
+.todo{margin:2px 0 -4px;font-weight:700;font-size:14px}
 footer .disc{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
 @media (max-width:380px){.mast h1{font-size:31px}.seal{width:54px;height:54px}}
 @media (prefers-reduced-motion:no-preference){.btn,.chip,.issue{transition:background-color .12s,border-color .12s}}
@@ -1236,20 +1247,32 @@ function build(){
   });
 }
 
+var ICON = {
+  web:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  wa:'<path d="M4 20l1.4-4.2A8 8 0 1 1 8.6 19L4 20z"/><path d="M9 10h6M9 13.5h4"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  x:'<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  sms:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21l3-4M7 9h10M7 12.5h6"/>',
+  tel:'<path d="M6 3h3l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 5a2 2 0 0 1 2-2z"/>'
+};
+var picked = {};
+
 function renderActions(ag, ta, box, note, ready, more, xt){
   var text = ta.value;
   box.textContent = "";
   var urgent = !!ag.callFirst || $("f-urgent").checked;
   var of = function(t){ return ag.ch.filter(function(c){ return c.t === t; }); };
-  var was = of("wa"), smss = of("sms"), mails = of("mail"), webs = of("web"), tels = of("tel"), lead = true, xDone = false;
+  var was = of("wa"), smss = of("sms"), mails = of("mail"), webs = of("web"), tels = of("tel");
   if(cur.nobot){ was = was.filter(function(c){ return !c.bot; }); }
-  var cls = function(kind){ var c = lead ? kind : ""; lead = false; return "btn " + c; };
-  var after = function(){
-    note.textContent = "Opened." + (xt && !xDone ? " Posting it on X as well, tagging @" + ag.x + ", adds public pressure." : "") + (more ? " Then come back to this page for the next complaint below." : "");
+  var E = encodeURIComponent;
+  var copyText = function(v, done){ try{ navigator.clipboard.writeText(v).then(function(){ done && done(true); }, function(){ done && done(false); }); }catch(e){ done && done(false); } };
+  var opened = function(){
+    note.textContent = "Opened." + (xt ? " Posting it on X as well, tagging @" + ag.x + ", adds public pressure." : "") + (more ? " Then come back to this page for the next complaint below." : "");
   };
   var guard = function(a){
     if(!ready){ a.setAttribute("aria-disabled","true"); a.addEventListener("click", function(e){ e.preventDefault(); $("f-loc").focus(); }); }
-    else{ a.addEventListener("click", after); }
+    else{ a.addEventListener("click", opened); }
   };
   var escape = function(a){
     // tel:, sms: and mailto: cannot leave an embedded frame on their own. Try the top window first, then a new tab.
@@ -1260,128 +1283,161 @@ function renderActions(ag, ta, box, note, ready, more, xt){
       catch(err){ try{ var w = window.open(url, "_blank"); if(w){ e.preventDefault(); } }catch(err2){} }
     });
   };
-  var handoff = function(a, sm, value, what){
-    // Phone, mail and SMS links can be blocked inside an embedded page, so also copy the value as a fallback.
-    a.addEventListener("click", function(){
-      try{ navigator.clipboard.writeText(value).then(function(){
-        sm.textContent = what + " " + value + " copied too, in case your phone did not open it.";
-      }, function(){}); }catch(e){}
-    });
+  var go = function(label, href, kind){
+    var a = el("a", {"class":"btn " + (kind || "primary"), href:href, target:"_blank", rel:"noopener"}, label);
+    guard(a); return a;
   };
-  var addTel = function(c){
-    var a = el("a", {"class":cls("primary"), href:"tel:" + c.num, target:"_blank", rel:"noopener"}, c.label);
-    var sm = el("small", null, "Dial " + (c.show || c.num));
-    a.appendChild(sm);
-    escape(a); handoff(a, sm, c.num, "Number");
-    a.addEventListener("click", after); box.appendChild(a);
-  };
-  var addX = function(){
-    if(!xt || xDone){ return; }
-    var first = lead;
-    var a = el("a", {"class":cls("primary"), target:"_blank", rel:"noopener", href:"https://x.com/intent/post?text=" + encodeURIComponent(xt)},
-      (first ? "Post on X, tagging " : "Also post on X, tagging ") + xTags(ag).map(function(h){ return "@" + h; }).join(", "));
-    a.appendChild(el("small", null, cur.xnoloc ? "Public post. Your location is left out of it." : "Public post: anyone can see the location. Add your photo there."));
-    xDone = true;
-    if(!ag.xwarn){ a.classList.add("has-flag"); a.appendChild(el("span", {"class":"flag"}, "Visibility improves turnaround time!")); }
-    if(!ready){ a.setAttribute("aria-disabled","true"); a.addEventListener("click", function(e){ e.preventDefault(); $("f-loc").focus(); }); }
-    else{ a.addEventListener("click", after); }
-    box.appendChild(a);
-    if(ag.xwarn){ box.appendChild(el("p", {"class":"need"}, ag.xwarn)); }
+  var todo = function(panel, steps, intro){
+    if(intro){ panel.appendChild(el("p", {"class":"tip"}, intro)); }
+    panel.appendChild(el("p", {"class":"todo"}, "What you need to do:"));
+    var ol = el("ol", {"class":"tip steps"});
+    steps.forEach(function(t){ if(t){ ol.appendChild(el("li", null, t)); } });
+    panel.appendChild(ol);
   };
 
+  // Each option: icon, short label under the icon, and a function that fills the panel shown when it is chosen.
+  var opts = [];
+  var telOpt = function(c){
+    opts.push({k:"tel", id:"tel" + c.num, name:c.show || c.num, fill:function(pn){
+      pn.appendChild(el("strong", null, c.label));
+      todo(pn, ["Tap the button. Your dialler opens with the number typed.", "Read your message out to the person who answers.", "Ask for a complaint number and note it down."]);
+      var a = go("Call " + (c.show || c.num), "tel:" + c.num); escape(a);
+      if(ready){ a.addEventListener("click", function(){ copyText(c.num); }); }
+      pn.appendChild(a);
+    }});
+  };
+  var xOpt = function(){
+    if(!xt){ return; }
+    opts.push({k:"x", id:"x", name:"X", flag:!ag.xwarn, fill:function(pn){
+      pn.appendChild(el("strong", null, "Post on X, tagging " + xTags(ag).map(function(h){ return "@" + h; }).join(", ")));
+      if(!ag.xwarn){ pn.appendChild(el("span", {"class":"flag"}, "Visibility improves turnaround time!")); }
+      todo(pn, ["Tap the button. X opens with the post written and the right handles tagged.", "Add your photo to the post.",
+        cur.xnoloc ? "Post it. It is public, but your location is left out." : "Post it. It is public, so anyone can see the location."]);
+      if(ag.xwarn){ pn.appendChild(el("p", {"class":"need"}, ag.xwarn)); }
+      pn.appendChild(go("Open X with the post written", "https://x.com/intent/post?text=" + E(xt)));
+    }});
+  };
+  var webOpt = function(c){
+    var isMarg = c.url.indexOf("marg.mcgm.gov.in") > -1, mc = MARG_CAT[cur.l];
+    opts.push({k:"web", id:"web" + c.url, name:isMarg ? "MARG" : "Website", fill:function(pn){
+      pn.appendChild(el("strong", null, c.label.replace(/^Open /, "")));
+      todo(pn, isMarg ? [
+        "Tap the button. Your message is copied, and BMC's MARG portal opens.",
+        "Sign in with your mobile number and the OTP it sends you.",
+        mc ? "Under Grievance Category, pick: " + mc[0] + "." : "Under Grievance Category, pick the closest match.",
+        mc && mc[1] ? "Under type, pick: " + mc[1] + "." : "Under type, pick the line that fits your problem.",
+        "Paste your message as the description.",
+        cur.nophoto ? "" : "Upload your photo. MARG accepts only geotagged photos, so keep location tags switched on in your camera.",
+        "Submit, and save the registration number it gives you."
+      ] : ["Tap the button. Your message is copied, and the site opens.", "Find the complaint form and paste your message.", cur.nophoto ? "" : "Attach your photo if the form allows it.", "Submit, and save the complaint number you get."]);
+      var a = go(isMarg ? "Open MARG" : "Open the website", c.url, "send");
+      if(ready){ a.addEventListener("click", function(){ copyText(text); }); }
+      pn.appendChild(a);
+    }});
+  };
+  var waOpt = function(c){
+    opts.push({k:"wa", id:"wa" + c.num, name:"WhatsApp", fill:function(pn){
+      pn.appendChild(el("strong", null, c.label.replace(/^Start /, "")));
+      pn.appendChild(el("small", {"class":"hint"}, c.show));
+      var a;
+      if(c.bot){
+        var b = BOT[c.bot](cur);
+        todo(pn, ["Tap the button. WhatsApp opens with \"" + b.start + "\" typed, and your message is copied for later."].concat(b.steps.map(function(t){ return t.replace(/^Send the Hi, then /, "Send it, then ").replace(/^Send the Hi and /, "Send it and ").replace(/^Send the Hi\. /, "Send it. "); })),
+          "This is a menu chatbot. Answer only what it asks, one step at a time. If you send your complaint before it asks for details, it replies that the response is invalid.");
+        pn.appendChild(el("p", {"class":"tip"}, "Menu wording changes now and then. Tap the nearest match."));
+        a = go("Open WhatsApp", "https://wa.me/" + c.num + "?text=" + E(b.start), "send");
+        if(ready){ a.addEventListener("click", function(){ copyText(text); }); }
+      }else{
+        todo(pn, ["Tap the button. WhatsApp opens with your message typed.", cur.nophoto ? "" : "Add your photo in the chat. A link cannot attach it for you.", "Press send, and save the complaint number you get back."]);
+        a = go("Open WhatsApp", "https://wa.me/" + c.num + "?text=" + E(text), "send");
+      }
+      pn.appendChild(a);
+    }});
+  };
+  var mailOpt = function(c){
+    opts.push({k:"mail", id:"mail" + c.addr, name:"Email", fill:function(pn){
+      pn.appendChild(el("strong", null, c.label));
+      var msm = el("small", {"class":"hint"}, "To " + c.addr + (c.cc ? ", copy to " + c.cc.split(",").join(" and ") : ""));
+      pn.appendChild(msm);
+      todo(pn, ["Tap your mail service below. A new email opens with the address, subject and message filled in.", cur.nophoto ? "" : "Attach your photo.", "Press send."]);
+      var subj = "Complaint: " + cur.l;
+      var links = [
+        ["Gmail", "https://mail.google.com/mail/?view=cm&fs=1&to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&su=" + E(subj) + "&body=" + E(text)],
+        ["Outlook", "https://outlook.live.com/mail/0/deeplink/compose?to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&subject=" + E(subj) + "&body=" + E(text)],
+        ["Yahoo", "https://compose.mail.yahoo.com/?to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&subject=" + E(subj) + "&body=" + E(text)],
+        ["Mail app", "mailto:" + c.addr + "?" + (c.cc ? "cc=" + E(c.cc) + "&" : "") + "subject=" + E(subj) + "&body=" + E(text)]
+      ];
+      // On a phone only the mail app link carries the draft reliably, so it goes first there.
+      if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){ links.unshift(links.pop()); links[0][0] = "Open in your mail app"; }
+      var row = el("div", {"class":"chips"});
+      links.forEach(function(l, k){
+        var a = el("a", {"class":"chip" + (k === 0 ? " on" : ""), href:l[1], target:"_blank", rel:"noopener"}, l[0]);
+        if(ready && l[1].indexOf("mailto:") === 0){ escape(a); a.addEventListener("click", function(){ copyText(c.addr); }); }
+        guard(a); row.appendChild(a);
+      });
+      pn.appendChild(row);
+    }});
+  };
+  var smsOpt = function(c){
+    opts.push({k:"sms", id:"sms" + c.num, name:"SMS", fill:function(pn){
+      pn.appendChild(el("strong", null, c.label));
+      pn.appendChild(el("small", {"class":"hint"}, c.show));
+      todo(pn, ["Tap the button. Your messages app opens with the text typed.", "Press send."]);
+      var a = go("Open messages", "sms:" + c.num + "?&body=" + E(text)); escape(a);
+      pn.appendChild(a);
+    }});
+  };
+  var copyOpt = function(){
+    opts.push({k:"copy", id:"copy", name:"Copy", fill:function(pn){
+      var st = el("strong", null, "Copy the message");
+      pn.appendChild(st);
+      todo(pn, ["Your message is copied when you tap Copy.", "Paste it wherever you file: a form, an email or a chat."]);
+      copyText(ta.value, function(ok){ st.textContent = ok ? "Copied. Paste it where you file." : "Could not copy. Select the text above and copy it."; });
+    }});
+  };
+
+  // Order: calling and X first when urgent; otherwise WhatsApp, email, copy, website, X, SMS, call. BMC leads with MARG.
   var phoneOnly = !was.length && !smss.length && !mails.length && !webs.length;
-  if(urgent){ tels.forEach(addTel); tels = []; addX(); }
-  else if(phoneOnly){ addX(); }
+  if(urgent){ tels.forEach(telOpt); tels = []; xOpt(); }
+  else if(phoneOnly){ xOpt(); }
+  if(ag.webFirst && !urgent){ webs.forEach(webOpt); webs = []; }
+  was.forEach(waOpt); mails.forEach(mailOpt); copyOpt(); webs.forEach(webOpt);
+  if(!opts.some(function(o){ return o.k === "x"; })){ xOpt(); }
+  smss.forEach(smsOpt); tels.forEach(telOpt);
 
-  var addWebs = function(first){
-  webs.forEach(function(c, wi){
-    var a = el("a", {"class": (first && wi === 0 && ready) ? "btn send" : "btn", href:c.url, target:"_blank", rel:"noopener"}, c.label);
-    var isMarg = c.url.indexOf("marg.mcgm.gov.in") > -1;
-    a.appendChild(el("small", null, isMarg ? (MARG_CAT[cur.l] ? "Category: " + MARG_CAT[cur.l][0] + (MARG_CAT[cur.l][1] ? ". Type: " + MARG_CAT[cur.l][1] : ". Then pick the type that fits") : "Pick the closest category and type") : c.url.replace(/^https?:\/\//,"").replace(/\/$/,"")));
-    a.addEventListener("click", after); box.appendChild(a);
-    if(isMarg){ box.appendChild(el("p", {"class":"tip"}, "It signs you in with your mobile number and an OTP. It accepts only a geotagged photo, so switch on location tags in your camera before you take the picture. Paste your copied message as the description.")); }
-  });
-    webs = [];
-  };
-  if(ag.webFirst && !urgent){ addWebs(true); lead = false; }
-  was.forEach(function(c){
-    var a = el("a", {"class":cls("send"), target:"_blank", rel:"noopener",
-      href:"https://wa.me/" + c.num + "?text=" + encodeURIComponent(text)});
-    a.appendChild(document.createTextNode(c.label));
-    if(c.bot){
-      var b = BOT[c.bot](cur);
-      a.href = "https://wa.me/" + c.num + "?text=" + encodeURIComponent(b.start);
-      var bsm = el("small", null, c.show + ", sends \"" + b.start + "\" and copies your message for later");
-      a.appendChild(bsm);
-      if(ready){ a.addEventListener("click", function(){
-        try{ navigator.clipboard.writeText(text).then(function(){ bsm.textContent = "Message copied. Follow the steps below in WhatsApp."; }, function(){}); }catch(e){}
-      }); }
-      guard(a); box.appendChild(a);
-      box.appendChild(el("p", {"class":"tip"}, "This is a menu chatbot. Answer only what it asks, one step at a time. If you send your complaint before it asks for details, it replies that the response is invalid. What to press:"));
-      var ol = el("ol", {"class":"tip steps"});
-      b.steps.forEach(function(t){ ol.appendChild(el("li", null, t)); });
-      box.appendChild(ol);
-      box.appendChild(el("p", {"class":"tip"}, "Menu wording changes now and then. Tap the nearest match."));
+  // Two options of the same kind get numbered so their labels differ.
+  var seen = {};
+  opts.forEach(function(o){ seen[o.name] = (seen[o.name] || 0) + 1; if(seen[o.name] > 1){ o.name = o.name + " " + seen[o.name]; } });
+  var key = cur.l + "|" + ag.name;
+  var bar = el("div", {"class":"icons", role:"tablist"});
+  var panel = el("div", {"class":"panel"});
+  var show = function(o, byTap){
+    picked[key] = o.id;
+    [].forEach.call(bar.children, function(b){ b.setAttribute("aria-selected", String(b.getAttribute("data-id") === o.id)); });
+    panel.textContent = "";
+    if(o.k === "copy" && !byTap){ // do not copy silently on redraw
+      panel.appendChild(el("strong", null, "Copy the message"));
+      panel.appendChild(el("p", {"class":"tip"}, "Tap Copy above to copy the message, then paste it wherever you file."));
       return;
     }
-    a.appendChild(el("small", null, c.show + ", opens WhatsApp with the message typed"));
-    guard(a); box.appendChild(a);
+    o.fill(panel);
+  };
+  opts.forEach(function(o, i){
+    var b = el("button", {type:"button", "class":"ico" + (i === 0 ? " lead" : ""), role:"tab", "data-id":o.id, "aria-selected":"false"});
+    b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[o.k] + '</svg>';
+    b.appendChild(el("span", null, o.name));
+    if(o.flag){ b.appendChild(el("i", {"class":"dot", title:"Visibility improves turnaround time"})); }
+    b.addEventListener("click", function(){ show(o, true); });
+    bar.appendChild(b);
   });
-
-  mails.forEach(function(c){
-    // mailto: is unreliable inside an embedded page, so offer each webmail's own compose link (plain https).
-    var subj = "Complaint: " + cur.l, E = encodeURIComponent;
-    var links = [
-      ["Gmail", "https://mail.google.com/mail/?view=cm&fs=1&to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&su=" + E(subj) + "&body=" + E(text)],
-      ["Outlook", "https://outlook.live.com/mail/0/deeplink/compose?to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&subject=" + E(subj) + "&body=" + E(text)],
-      ["Yahoo", "https://compose.mail.yahoo.com/?to=" + E(c.addr) + (c.cc ? "&cc=" + E(c.cc) : "") + "&subject=" + E(subj) + "&body=" + E(text)],
-      ["Mail app", "mailto:" + c.addr + "?" + (c.cc ? "cc=" + E(c.cc) + "&" : "") + "subject=" + E(subj) + "&body=" + E(text)]
-    ];
-    // On a phone only the mail app link carries the draft reliably, so it goes first there.
-    if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){ links.unshift(links.pop()); links[0][0] = "Open in your mail app"; }
-    var wrap = el("div", {"class":"mailbox" + (lead ? " lead" : "")}); lead = false;
-    wrap.appendChild(el("strong", null, c.label));
-    var msm = el("small", null, "To " + c.addr + (c.cc ? ", copy to " + c.cc.split(",").join(" and ") : ""));
-    wrap.appendChild(msm);
-    var row = el("div", {"class":"chips"});
-    links.forEach(function(l, k){
-      var a = el("a", {"class":"chip" + (k === 0 ? " on" : ""), href:l[1], target:"_blank", rel:"noopener"}, l[0]);
-      if(ready && l[1].indexOf("mailto:") === 0){ escape(a); handoff(a, msm, c.addr, "Address"); }
-      guard(a); row.appendChild(a);
-    });
-    wrap.appendChild(row);
-    box.appendChild(wrap);
-  });
-
-  var copy = el("button", {type:"button", "class":cls("primary")}, "Copy the message");
-  copy.addEventListener("click", function(){
-    var done = function(ok){ copy.textContent = ok ? "Copied. Paste it where you file." : "Could not copy. Select the text above and copy it."; };
-    try{
-      navigator.clipboard.writeText(ta.value).then(function(){ done(true); }, function(){ done(false); });
-    }catch(e){ done(false); }
-  });
-  box.appendChild(copy);
-
-  addWebs(false);
-  lead = false;
-  addX();
-
-  smss.forEach(function(c){
-    var a = el("a", {"class":"btn", target:"_blank", rel:"noopener", href:"sms:" + c.num + "?&body=" + encodeURIComponent(text)}, c.label);
-    var ssm = el("small", null, c.show + ", opens your messages app with the text typed");
-    a.appendChild(ssm);
-    if(ready){ escape(a); handoff(a, ssm, c.num, "Number"); }
-    guard(a); box.appendChild(a);
-  });
-  tels.forEach(addTel);
+  box.appendChild(bar); box.appendChild(panel);
+  var start = opts.filter(function(o){ return o.id === picked[key]; })[0] || opts[0];
+  if(start){ show(start, false); }
 
   note.textContent = ag.callFirst ? "Call first, then file online with the same details. Save the reference number you get."
-    : urgent ? "Marked as urgent, so calling comes first. Read the message out and ask for a complaint number, then send the written complaint for the record."
-    : was.length ? "A link cannot attach photos. Once WhatsApp opens, add your photo in the chat, then press send. Save the complaint number you get back."
-    : mails.length ? "Pick your mail service and a new email opens with the address, subject and message filled in. Attach your photo and send. If none of them suits you, copy the message and email the address shown."
-    : webs.length ? "Copy the message, open the form, paste it and attach your photo. Save the complaint number you get back."
-    : xt ? "This office takes complaints only by phone, so a public post on X is the written option. Read the message out when you call, and ask for a complaint number."
-    : "Read the message out when you call, and ask for a complaint number.";
+    : urgent ? "Marked as urgent, so calling comes first. Send the written complaint afterwards for the record."
+    : phoneOnly && xt ? "This office takes complaints only by phone, so a public post on X is the written option."
+    : "";
 }
 
 function showMatch(idx, alts, how){
