@@ -1297,13 +1297,19 @@ function renderActions(ag, ta, box, note, ready, more, xt){
 
   // Each option: icon, short label under the icon, and a function that fills the panel shown when it is chosen.
   var opts = [];
-  var telOpt = function(c){
-    opts.push({k:"tel", id:"tel" + c.num, name:c.show || c.num, fill:function(pn){
-      pn.appendChild(el("strong", null, c.label));
-      todo(pn, ["Tap the button. Your dialler opens with the number typed.", "Read your message out to the person who answers.", "Ask for a complaint number and note it down."]);
-      var a = go("Call " + (c.show || c.num), "tel:" + c.num); escape(a);
-      if(ready){ a.addEventListener("click", function(){ copyText(c.num); }); }
-      pn.appendChild(a);
+  // One Call icon, however many numbers the agency has: the panel lists each with its own button.
+  var telOpt = function(list){
+    if(!list.length){ return; }
+    opts.push({k:"tel", id:"tel", name:"Call", fill:function(pn){
+      pn.appendChild(el("strong", null, list.length > 1 ? "Call" : list[0].label));
+      todo(pn, [list.length > 1 ? "Tap the number you need. Your dialler opens with it typed." : "Tap the button. Your dialler opens with the number typed.", "Read your message out to the person who answers.", "Ask for a complaint number and note it down."]);
+      list.forEach(function(c){
+        var nm = c.label.replace(/^Call /, ""); nm = nm.charAt(0).toUpperCase() + nm.slice(1);
+        var a = go(list.length > 1 ? nm : "Call " + (c.show || c.num), "tel:" + c.num); escape(a);
+        if(list.length > 1){ a.appendChild(el("small", null, "Call " + (c.show || c.num))); }
+        if(ready){ a.addEventListener("click", function(){ copyText(c.num); }); }
+        pn.appendChild(a);
+      });
     }});
   };
   var xOpt = function(){
@@ -1398,12 +1404,12 @@ function renderActions(ag, ta, box, note, ready, more, xt){
 
   // Order: calling and X first when urgent; otherwise WhatsApp, email, copy, website, X, SMS, call. BMC leads with MARG.
   var phoneOnly = !was.length && !smss.length && !mails.length && !webs.length;
-  if(urgent){ tels.forEach(telOpt); tels = []; xOpt(); }
+  if(urgent){ telOpt(tels); tels = []; xOpt(); }
   else if(phoneOnly){ xOpt(); }
   if(ag.webFirst && !urgent){ webs.forEach(webOpt); webs = []; }
   was.forEach(waOpt); mails.forEach(mailOpt); copyOpt(); webs.forEach(webOpt);
   if(!opts.some(function(o){ return o.k === "x"; })){ xOpt(); }
-  smss.forEach(smsOpt); tels.forEach(telOpt);
+  smss.forEach(smsOpt); telOpt(tels);
 
   // Two options of the same kind get numbered so their labels differ.
   var seen = {};
